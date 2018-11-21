@@ -1,0 +1,245 @@
+(load-def '(define the-empty-table
+                (lambda (name)
+                  (flog (quote the-empty-table-scheme) name))))
+
+(load-def '(define global-table the-empty-table))
+
+(load-def '(define text-of
+                (lambda (x)
+                  (car (cdr x)))))
+
+(load-def '(define formals-of
+                (lambda (x)
+                  (car (cdr x)))))
+
+(load-def '(define body-of
+                (lambda (x)
+                  (cdr (cdr x)))))
+
+(load-def '(define name-of
+                (lambda (x)
+                  (car (cdr x)))))
+
+(load-def '(define right-side-of
+                (lambda (x)
+                  (cond ((null? (cdr (cdr x))) nil)
+                        (t (car (cdr (cdr x))))))))
+
+(load-def '(define cond-lines-of
+                (lambda (x)
+                  (cdr x))))
+
+(load-def '(define question-of
+                (lambda (x)
+                  (car x))))
+
+(load-def '(define answer-of
+                (lambda (x)
+                  (car (cdr x)))))
+
+(load-def '(define function-of
+                (lambda (x)
+                  (car x))))
+
+(load-def '(define arguments-of
+                (lambda (x)
+                  (cdr x))))
+
+(load-def '(define lookup
+                (lambda (table name)
+                  (table name))))
+
+(load-def '(define extend
+                (lambda (name1 value table)
+                  (lambda (name2)
+                    (cond ((eq? name2 name1)
+                           value)
+                          (t (table name2)))))))
+
+(load-def '(define define?
+                (lambda (e)
+                  (cond ((atom? e) nil)
+                        ((atom? (car e)) (eq? (car e) (quote define)))
+                        (t nil)))))
+
+(load-def '(define box
+                (lambda (it)
+                  (lambda (sel)
+                    (sel it (lambda (new)
+                                      (set! it new)))))))
+
+(load-def '(define setbox
+                (lambda (box new)
+                  (box (lambda (get set)
+                         (set new))))))
+
+(load-def '(define unbox
+                (lambda (box)
+                  (box (lambda (get set)
+                         get)))))
+
+(load-def '(define *define
+                (lambda (e)
+                  (set! global-table (extend (name-of e)
+                                             (box (the-meaning (right-side-of e)))
+                                             global-table)))))
+
+(load-def '(define lookup-in-global-table
+                (lambda (name)
+                  (lookup global-table name))))
+
+(load-def '(define the-meaning
+                (lambda (e)
+                  (meaning e lookup-in-global-table))))
+
+(load-def '(define meaning
+                (lambda (e table)
+                  ((expression-to-action e) e table))))
+
+(load-def '(define *quote
+                (lambda (e table)
+                  (text-of e))))
+
+(load-def '(define *identifier
+                (lambda (e table)
+                  (unbox (lookup table e)))))
+
+(load-def '(define *set
+                (lambda (e table)
+                  (setbox (lookup table (name-of e))
+                          (meaning (right-side-of e) table)))))
+
+(load-def '(define *lambda
+                (lambda (e table)
+                  (lambda (args)
+                    (beglis (body-of e)
+                            (multi-extend (formals-of e)
+                                          (box-all args)
+                                          table))))))
+
+(load-def '(define beglis
+                (lambda (es table)
+                  (cond ((null? (cdr es)) (meaning (car es) table))
+                        ( ((lambda (val)
+                             (beglis (cdr es) table))
+                           (meaning (car es) table)))))))
+
+(load-def '(define box-all
+                (lambda (vals)
+                  (cond ((null? vals) nil)
+                        (t (cons (box (car vals))
+                                 (box-all (cdr vals))))))))
+
+(load-def '(define multi-extend
+                (lambda (names values table)
+                  (cond ((null? names) table)
+                        (t (extend (car names) (car values) (multi-extend (cdr names) (cdr values) table)))))))
+
+(load-def '(define *application
+                (lambda (e table)
+                  ((meaning (function-of e) table)
+                           (evlis (arguments-of e) table)))))
+
+(load-def '(define evlis
+                (lambda (args table)
+                  (cond ((null? args) ())
+                        (t ((lambda (val)            ; enforce evaluation order of arguments
+                              (cons val (evlis (cdr args) table)))
+                            (meaning (car args) table)))))))
+
+(load-def '(define a-prim
+                (lambda (p)
+                  (lambda (arglist)
+                    (p (car arglist))))))
+
+(load-def '(define b-prim
+                (lambda (p)
+                  (lambda (arglist)
+                    (p (car arglist) (car (cdr arglist)))))))
+
+(load-def '(define *const
+                ((lambda (*cons *car *cdr *null?
+                          *eq? *atom? *zero? *add1
+                          *sub1 *number? *flog)
+                   (lambda (e table)
+                     (cond
+                       ((number? e) e)
+                       ((eq? e t) t)
+                       ((eq? e nil) nil)
+                       ((eq? e (quote cons)) *cons)
+                       ((eq? e (quote car)) *car)
+                       ((eq? e (quote cdr)) *cdr)
+                       ((eq? e (quote null?)) *null?)
+                       ((eq? e (quote eq?)) *eq?)
+                       ((eq? e (quote atom?)) *atom?)
+                       ((eq? e (quote zero?)) *zero?)
+                       ((eq? e (quote add1)) *add1)
+                       ((eq? e (quote sub1)) *sub1)
+                       ((eq? e (quote number?)) *number?)
+                       ((eq? e (quote flog)) *flog)
+                       (t (flog (quote const-scheme) e)))))
+                 (b-prim cons)
+                 (a-prim car)
+                 (a-prim cdr)
+                 (a-prim null?)
+
+                 (b-prim eq?)
+                 (a-prim atom?)
+                 (a-prim zero?)
+                 (a-prim add1)
+
+                 (a-prim sub1)
+                 (a-prim number?)
+                 (b-prim flog))))
+
+(load-def '(define *cond
+                (lambda (e table)
+                  (evcon (cond-lines-of e) table))))
+
+(load-def '(define evcon
+                (lambda (lines table)
+                  (cond ((meaning (question-of (car lines)) table)
+                         (meaning (answer-of (car lines)) table))
+
+                        (t (evcon (cdr lines) table))))))
+
+(load-def '(define value-of
+                (lambda (e)
+                  (cond ((define? e) (*define e))
+                        (t (the-meaning e))))))
+
+(load-def '(define expression-to-action
+                (lambda (e)
+                  (cond ((atom? e) (atom-to-action e))
+                        ((null? e) (atom-to-action e))
+                        (t (list-to-action e))))))
+
+(load-def '(define atom-to-action
+                (lambda (e)
+                  (cond
+                    ((number? e) *const)
+                    ((eq? e t) *const)
+                    ((eq? e nil) *const)
+                    ((eq? e (quote cons)) *const)
+                    ((eq? e (quote car)) *const)
+                    ((eq? e (quote cdr)) *const)
+                    ((eq? e (quote null?)) *const)
+                    ((eq? e (quote eq?)) *const)
+                    ((eq? e (quote atom?)) *const)
+                    ((eq? e (quote zero?)) *const)
+                    ((eq? e (quote add1)) *const)
+                    ((eq? e (quote sub1)) *const)
+                    ((eq? e (quote number?)) *const)
+                    ((eq? e (quote flog)) *const)
+                    (t *identifier)))))
+
+(load-def '(define list-to-action
+                (lambda (e)
+                  (cond ((atom? (car e))
+                         (cond ((eq? (car e) (quote quote)) *quote)
+                               ((eq? (car e) (quote lambda)) *lambda)
+                               ((eq? (car e) (quote set!)) *set)
+                               ((eq? (car e) (quote cond)) *cond)
+                               (t *application)))
+
+                        (t *application)))))
